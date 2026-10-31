@@ -1,0 +1,1053 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>TicTac Orbit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&family=Unbounded:wght@500;700;900&display=swap">
+<style>
+/* Layout: full-viewport 3D scene with bloom, floating glass HUD — brand top-left, mode controls
+   top-right, turn pill center-top, scores + hints bottom-center, win verdict modal centered. */
+:root {
+  color-scheme: dark;
+  --bg: #070a14;
+  --text: #e9edf8;
+  --dim: #8b94ae;
+  --x: #ff5c4d;
+  --o: #3ee0c8;
+  --gold: #f5c542;
+  --glass: rgba(13, 18, 34, 0.66);
+  --glass-2: rgba(24, 31, 54, 0.9);
+  --line: rgba(255, 255, 255, 0.09);
+  --font-display: 'Unbounded', system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; overflow: hidden;
+  background: var(--bg); color: var(--text);
+  font-family: var(--font-body); font-size: 14px; line-height: 1.45;
+}
+#scene {
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  display: block; touch-action: none; cursor: pointer;
+}
+.vignette {
+  position: fixed; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 8, 0.42) 100%);
+}
+
+/* ---------- HUD ---------- */
+.hud {
+  position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: space-between;
+  padding: max(18px, env(safe-area-inset-top, 0px)) max(18px, env(safe-area-inset-right, 0px))
+           max(16px, env(safe-area-inset-bottom, 0px)) max(18px, env(safe-area-inset-left, 0px));
+  pointer-events: none;
+}
+.hud button { pointer-events: auto; }
+.hud-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.eyebrow {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em;
+  color: var(--dim); text-transform: uppercase;
+}
+h1 {
+  margin: 3px 0 0; font-family: var(--font-display); font-weight: 700;
+  font-size: 19px; letter-spacing: 0.01em; text-wrap: balance;
+}
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.seg {
+  display: flex; gap: 4px; padding: 4px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--glass); backdrop-filter: blur(8px);
+}
+.seg-btn {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em;
+  color: var(--dim); background: none; border: 0; border-radius: 999px;
+  padding: 6px 12px; cursor: pointer; transition: color .15s, background .15s;
+}
+.seg-btn.active { color: var(--text); background: var(--glass-2); }
+.seg-btn:hover, .chip-btn:hover { color: var(--text); }
+.chip-btn {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em;
+  color: var(--dim); background: var(--glass); border: 1px solid var(--line);
+  border-radius: 999px; padding: 6px 12px; cursor: pointer;
+  backdrop-filter: blur(8px); transition: color .15s, border-color .15s;
+}
+button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+.turn {
+  align-self: center; display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--glass); backdrop-filter: blur(8px);
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.03em;
+}
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.dot.x { background: var(--x); box-shadow: 0 0 10px var(--x); }
+.dot.o { background: var(--o); box-shadow: 0 0 10px var(--o); }
+.thinking::after {
+  content: ''; display: inline-block; min-width: 1.6em; text-align: left;
+  animation: dots 1.2s steps(3) infinite;
+}
+@keyframes dots {
+  0% { content: ' ·'; }
+  33% { content: ' ··'; }
+  66% { content: ' ···'; }
+  100% { content: ' ·'; }
+}
+
+.hud-bottom { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.scores { display: flex; gap: 8px; align-items: stretch; }
+.chip {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  min-width: 72px; padding: 8px 12px 7px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--glass); backdrop-filter: blur(8px);
+}
+.chip .who {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--dim);
+}
+.chip .num {
+  font-family: var(--font-display); font-weight: 700; font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+.chip.x .who { color: var(--x); }
+.chip.o .who { color: var(--o); }
+.text-btn {
+  font-family: var(--font-mono); font-size: 11px; color: var(--dim);
+  background: none; border: 0; cursor: pointer; padding: 4px 8px; letter-spacing: 0.05em;
+}
+.text-btn:hover { color: var(--text); text-decoration: underline; }
+.hint {
+  margin: 0; font-family: var(--font-mono); font-size: 11px;
+  color: var(--dim); letter-spacing: 0.04em; text-align: center;
+}
+
+/* ---------- win overlay ---------- */
+.overlay {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(7, 10, 20, 0.55); backdrop-filter: blur(6px);
+  opacity: 0; transition: opacity .3s; pointer-events: auto;
+}
+.overlay.show { opacity: 1; }
+.overlay[hidden] { display: none; }
+.overlay-card {
+  text-align: center; padding: 34px 46px 30px; border-radius: 20px;
+  border: 1px solid var(--line); background: var(--glass-2); backdrop-filter: blur(16px);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+}
+.verdict {
+  margin: 0; font-family: var(--font-display); font-weight: 900;
+  font-size: clamp(28px, 6vw, 44px); letter-spacing: 0.02em;
+  text-shadow: 0 0 24px currentColor;
+}
+.again {
+  margin-top: 20px; font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.06em;
+  color: var(--bg); background: var(--text); border: 0; border-radius: 999px;
+  padding: 11px 26px; cursor: pointer; transition: transform .15s;
+}
+.again:hover { transform: translateY(-1px); }
+
+/* ---------- about drawer ---------- */
+.about-btn {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em;
+  color: var(--dim); background: var(--glass); border: 1px solid var(--line);
+  border-radius: 999px; padding: 6px 12px; cursor: pointer;
+  backdrop-filter: blur(8px); transition: color .15s, border-color .15s;
+}
+.about-btn:hover { color: var(--text); }
+.about-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 92vw);
+  z-index: 20; overflow-y: auto; overscroll-behavior: contain;
+  padding: max(24px, env(safe-area-inset-top, 0px)) 26px max(32px, env(safe-area-inset-bottom, 0px)) 26px;
+  background: rgba(10, 14, 28, 0.88); backdrop-filter: blur(20px);
+  border-left: 1px solid var(--line);
+  transform: translateX(103%); transition: transform .38s cubic-bezier(.32, .72, .25, 1);
+  box-shadow: -30px 0 80px rgba(0, 0, 0, 0.45);
+}
+.about-panel.open { transform: translateX(0); }
+.about-scrim {
+  position: fixed; inset: 0; z-index: 19; background: rgba(4, 6, 14, 0.5);
+  opacity: 0; pointer-events: none; transition: opacity .3s;
+}
+.about-scrim.show { opacity: 1; pointer-events: auto; }
+.about-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+.about-title {
+  margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 20px;
+  letter-spacing: 0.01em;
+}
+.about-close {
+  flex: none; width: 34px; height: 34px; border-radius: 50%;
+  background: var(--glass-2); border: 1px solid var(--line); color: var(--dim);
+  font-family: var(--font-mono); font-size: 15px; cursor: pointer; line-height: 1;
+}
+.about-close:hover { color: var(--text); }
+.about-lead {
+  margin: 10px 0 26px; color: var(--dim); font-size: 13.5px; max-width: 60ch;
+}
+.about-section { margin-bottom: 26px; }
+.about-section h3 {
+  margin: 0 0 8px; font-family: var(--font-mono); font-size: 10.5px;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold);
+  font-weight: 500;
+}
+.about-section p { margin: 0 0 10px; font-size: 13.5px; max-width: 60ch; }
+.about-section p:last-child { margin-bottom: 0; }
+.about-section strong { color: var(--text); font-weight: 500; }
+.x-word { color: var(--x); font-weight: 500; }
+.o-word { color: var(--o); font-weight: 500; }
+.stat-row {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;
+}
+.stat {
+  flex: 1 1 100px; min-width: 0; padding: 10px 12px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--glass);
+}
+.stat .n {
+  display: block; font-family: var(--font-display); font-weight: 700; font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.stat .l {
+  display: block; margin-top: 2px; font-family: var(--font-mono); font-size: 9.5px;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim);
+}
+.about-foot {
+  margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--line);
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--dim); letter-spacing: 0.05em;
+}
+.about-foot a { color: var(--dim); }
+.about-foot a:hover { color: var(--text); }
+
+@media (max-width: 480px) {
+  h1 { font-size: 16px; }
+  .chip { min-width: 60px; padding: 7px 9px; }
+  .overlay-card { padding: 28px 30px 26px; }
+  .hint { font-size: 10px; padding: 0 12px; }
+}
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div class="vignette"></div>
+
+<div class="hud">
+  <header class="hud-top">
+    <div class="brand">
+      <span class="eyebrow">three.js arcade</span>
+      <h1>TicTac Orbit</h1>
+    </div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Game mode">
+        <button id="modeAi" class="seg-btn active">vs AI</button>
+        <button id="mode2p" class="seg-btn">2 players</button>
+      </div>
+      <button id="aboutBtn" class="about-btn">about</button>
+      <button id="muteBtn" class="chip-btn">sound on</button>
+    </div>
+  </header>
+
+  <div class="turn" role="status" aria-live="polite">
+    <span class="dot x" id="turnDot"></span>
+    <span id="turnText">X to move · you</span>
+  </div>
+
+  <footer class="hud-bottom">
+    <div class="scores">
+      <div class="chip x"><span class="who">X</span><span class="num" id="scoreX">0</span></div>
+      <div class="chip"><span class="who">draws</span><span class="num" id="scoreD">0</span></div>
+      <div class="chip o"><span class="who">O</span><span class="num" id="scoreO">0</span></div>
+      <button id="resetScores" class="text-btn">reset<br>scores</button>
+    </div>
+    <p class="hint" id="hintText">you play X · minimax plays O · drag to orbit, scroll to zoom, click a tile</p>
+  </footer>
+</div>
+
+<div class="about-scrim" id="aboutScrim" hidden></div>
+<aside class="about-panel" id="aboutPanel" aria-label="About this game" hidden>
+  <div class="about-head">
+    <h2 class="about-title">How this works</h2>
+    <button id="aboutClose" class="about-close" aria-label="Close">✕</button>
+  </div>
+  <p class="about-lead">A 3,000-year-old pencil-and-paper game, rebuilt as a glowing machine in space. Every part of it — the board, the opponent, the sound — is code you could open and read.</p>
+
+  <section class="about-section">
+    <h3>The board</h3>
+    <p>Nothing here is a video. <strong>three.js</strong> draws a real 3D scene onto your screen with <strong>WebGL</strong> — your graphics card renders nine glass tiles, a starfield, and a bloom pass that makes bright things genuinely glow. Drag to orbit: the camera is a satellite circling the board in real time.</p>
+    <p>When you click, a ray of mathematics is cast from your cursor through the scene to find which tile you meant. That's <strong>raycasting</strong> — the same trick shooters use to detect bullets hitting walls.</p>
+  </section>
+
+  <section class="about-section">
+    <h3>What "vs AI" means</h3>
+    <p>The <span class="o-word">O</span> you face isn't faking it. It runs <strong>minimax</strong>: before every move it silently plays out <em>every possible continuation</em> of the game — every reply you could make, every counter to that reply, all the way to the end — then picks the move where the worst thing that can happen to it is still the best available.</p>
+    <p>The practical upshot: <strong>it never loses.</strong> Draw it, or lose to it — there is no third outcome if you slip. Beat it once and you'd have proven the mathematicians wrong.</p>
+    <div class="stat-row">
+      <div class="stat"><span class="n">255,168</span><span class="l">possible games</span></div>
+      <div class="stat"><span class="n">5,478</span><span class="l">legal board states</span></div>
+      <div class="stat"><span class="n">765</span><span class="l">essentially distinct</span></div>
+    </div>
+    <p style="margin-top: 10px; color: var(--dim); font-size: 12.5px;">Tic-tac-toe is tiny enough to solve exhaustively — the AI searches it in well under a second. In <em>2 players</em> mode, the machine stays out of the way entirely.</p>
+  </section>
+
+  <section class="about-section">
+    <h3>The sound</h3>
+    <p>No audio files. Every click and chime is synthesized live with the <strong>Web Audio API</strong>: <span class="x-word">X</span> lands as a low triangle wave, <span class="o-word">O</span> as a higher sine, and a win triggers a three-note major chord — 523, 659 and 784 hertz, staggered 120&nbsp;ms apart. Mathematics, played as music.</p>
+  </section>
+
+  <section class="about-section">
+    <h3>The craft</h3>
+    <p>The animation is spring physics, not canned loops — tiles scale in with overshoot, marks drop onto the board, the winning beam shoots through the line before the gold pulse begins. If your system asks for <strong>reduced motion</strong>, all of it settles instantly instead. Your score persists in this browser between visits.</p>
+  </section>
+
+  <footer class="about-foot">
+    built with three.js r128 · webgl · web audio · vanilla js — <a href="https://github.com/oferhalevi/tictac-orbit" target="_blank" rel="noopener">the code is the docs</a>
+  </footer>
+</aside>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="overlay-card">
+    <p class="verdict" id="verdict">X WINS</p>
+    <button id="againBtn" class="again">Play again</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/GammaCorrectionShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script>
+(() => {
+'use strict';
+
+const $ = s => document.querySelector(s);
+const canvas = $('#scene');
+const overlay = $('#overlay');
+const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// ---------- game state ----------
+const board = new Array(9).fill(null);
+const LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+let turn = 'X';
+let phase = 'playing'; // 'playing' | 'over'
+let winner = null;
+let mode = 'ai';       // 'ai' | '2p'
+let scores = { X: 0, O: 0, D: 0 };
+
+function winnerOf(b) {
+  for (const [a, c, d] of LINES)
+    if (b[a] && b[a] === b[c] && b[a] === b[d]) return b[a];
+  return b.includes(null) ? null : 'D';
+}
+
+// ---------- minimax (perfect play for O) ----------
+function minimax(b, player, depth) {
+  const w = winnerOf(b);
+  if (w) return { score: w === 'O' ? 10 - depth : w === 'X' ? depth - 10 : 0, move: -1 };
+  let best = null;
+  for (let i = 0; i < 9; i++) {
+    if (b[i]) continue;
+    b[i] = player;
+    const r = minimax(b, player === 'O' ? 'X' : 'O', depth + 1);
+    b[i] = null;
+    if (best === null || (player === 'O' ? r.score > best.score : r.score < best.score))
+      best = { score: r.score, move: i };
+  }
+  return best;
+}
+
+function aiMove() {
+  if (phase !== 'playing') return;
+  let move;
+  if (board.every(v => !v)) {
+    move = [0, 2, 4, 6, 8][Math.floor(Math.random() * 5)];
+  } else {
+    const root = minimax(board.slice(), 'O', 0);
+    const cands = [];
+    for (let i = 0; i < 9; i++) {
+      if (board[i]) continue;
+      board[i] = 'O';
+      const r = minimax(board, 'X', 1);
+      board[i] = null;
+      if (r.score === root.score) cands.push(i);
+    }
+    move = cands[Math.floor(Math.random() * cands.length)];
+  }
+  if (move != null && move >= 0) place(move);
+}
+
+// ---------- tweens & effects (declared before any use) ----------
+const tweens = [];
+function tween(dur, onUpdate, opts = {}) {
+  if (REDUCED) { onUpdate(1, 1); return; }
+  tweens.push({ t: -(opts.delay || 0), dur, onUpdate, ease: opts.ease || easeOutBack });
+}
+function stepTweens(dt) {
+  for (let i = tweens.length - 1; i >= 0; i--) {
+    const tw = tweens[i];
+    tw.t += dt;
+    if (tw.t < 0) continue;
+    const k = Math.min(tw.t / tw.dur, 1);
+    tw.onUpdate(tw.ease(k), k);
+    if (k >= 1) tweens.splice(i, 1);
+  }
+}
+function easeOutBack(t) {
+  const c1 = 1.70158, c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+}
+function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+const bursts = [];
+function spawnSparks(x, z, colorHex) {
+  const n = 130;
+  const pos = new Float32Array(n * 3);
+  const vels = [];
+  for (let i = 0; i < n; i++) {
+    pos[i * 3]     = x + (Math.random() - 0.5) * 0.2;
+    pos[i * 3 + 1] = 0.55 + (Math.random() - 0.5) * 0.2;
+    pos[i * 3 + 2] = z + (Math.random() - 0.5) * 0.2;
+    const a = Math.random() * Math.PI * 2;
+    const sp = 0.8 + Math.random() * 1.6;
+    vels.push(new THREE.Vector3(Math.cos(a) * sp, 0.5 + Math.random() * 1.5, Math.sin(a) * sp));
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const m = new THREE.PointsMaterial({
+    color: colorHex, size: 0.06, transparent: true, opacity: 1,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const pts = new THREE.Points(g, m);
+  scene.add(pts);
+  bursts.push({ pts, vels, life: 0 });
+}
+
+// ---------- renderer / scene ----------
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070a14);
+scene.fog = new THREE.FogExp2(0x070a14, 0.026);
+
+const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+const TARGET = new THREE.Vector3(0, 0.4, 0);
+// damped orbit: current values chase targets, so the fly-in arrival is free
+let theta = -0.55, phi = 1.02, radius = 13.8;   // start far out
+let thetaT = 0.35, phiT = 0.95, radiusT = 8.6;  // home position
+let lastInteract = performance.now();
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  composer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+
+// ---------- lights ----------
+scene.add(new THREE.AmbientLight(0x2a3350, 0.7));
+const key = new THREE.DirectionalLight(0xffffff, 0.75);
+key.position.set(4, 8, 5);
+scene.add(key);
+const emberLight = new THREE.PointLight(0xff5c4d, 0.8, 14);
+emberLight.position.set(-4, 2.5, -3);
+scene.add(emberLight);
+const tealLight = new THREE.PointLight(0x3ee0c8, 0.8, 14);
+tealLight.position.set(4, 2.5, 3);
+scene.add(tealLight);
+
+// ---------- environment map (procedural, for tile reflections) ----------
+{
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, 128);
+  grad.addColorStop(0, '#1b2340');
+  grad.addColorStop(0.5, '#0c1122');
+  grad.addColorStop(1, '#04060c');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 256, 128);
+  const blob = (x, y, r, color) => {
+    const rg = g.createRadialGradient(x, y, 0, x, y, r);
+    rg.addColorStop(0, color);
+    rg.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = rg;
+    g.fillRect(x - r, y - r, r * 2, r * 2);
+  };
+  blob(60, 40, 50, 'rgba(255,255,255,0.9)');
+  blob(190, 30, 40, 'rgba(255,92,77,0.55)');
+  blob(150, 90, 45, 'rgba(62,224,200,0.5)');
+  const tex = new THREE.CanvasTexture(c);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  pmrem.compileEquirectangularShader();
+  scene.environment = pmrem.fromEquirectangular(tex).texture;
+  tex.dispose();
+  pmrem.dispose();
+}
+
+// ---------- composer & bloom ----------
+const composer = new THREE.EffectComposer(renderer);
+composer.addPass(new THREE.RenderPass(scene, camera));
+const bloom = new THREE.UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight), 0.55, 0.6, 0.45
+);
+composer.addPass(bloom);
+composer.addPass(new THREE.ShaderPass(THREE.GammaCorrectionShader));
+resize();
+
+// ---------- starfield & dust ----------
+let stars, dust;
+{
+  const n = 650;
+  const pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const r = 9 + Math.random() * 14;
+    const th = Math.random() * Math.PI * 2;
+    const ph = Math.acos(2 * Math.random() - 1);
+    pos[i * 3]     = r * Math.sin(ph) * Math.cos(th);
+    pos[i * 3 + 1] = r * Math.cos(ph);
+    pos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  stars = new THREE.Points(g, new THREE.PointsMaterial({
+    color: 0x5f6b8f, size: 0.05, transparent: true, opacity: 0.8,
+    sizeAttenuation: true, depthWrite: false,
+  }));
+  scene.add(stars);
+}
+{
+  const n = 90;
+  const pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    pos[i * 3]     = (Math.random() - 0.5) * 12;
+    pos[i * 3 + 1] = Math.random() * 3.2;
+    pos[i * 3 + 2] = (Math.random() - 0.5) * 12;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  dust = new THREE.Points(g, new THREE.PointsMaterial({
+    color: 0x8fa3d9, size: 0.035, transparent: true, opacity: 0.5,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  scene.add(dust);
+}
+
+// ---------- platform & ground glow ----------
+{
+  const grid = new THREE.GridHelper(9, 18, 0x26304f, 0x141a2e);
+  grid.position.y = -0.42;
+  scene.add(grid);
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(4.9, 0.025, 8, 120),
+    new THREE.MeshStandardMaterial({ color: 0x39466e, emissive: 0x26304f, roughness: 0.4, metalness: 0.8 })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = -0.3;
+  scene.add(ring);
+
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const rg = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  rg.addColorStop(0, 'rgba(70,88,140,0.55)');
+  rg.addColorStop(0.5, 'rgba(40,52,90,0.22)');
+  rg.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = rg;
+  g.fillRect(0, 0, 128, 128);
+  const glow = new THREE.Mesh(
+    new THREE.PlaneGeometry(11, 11),
+    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false })
+  );
+  glow.rotation.x = -Math.PI / 2;
+  glow.position.y = -0.415;
+  scene.add(glow);
+}
+
+// ---------- board ----------
+const X_COLOR = 0xff5c4d, O_COLOR = 0x3ee0c8, GOLD = 0xf5c542;
+const SP = 1.55;
+const cellX = i => ((i % 3) - 1) * SP;
+const cellZ = i => (Math.floor(i / 3) - 1) * SP;
+
+function roundedRect(w, h, r) {
+  const s = new THREE.Shape();
+  const x = -w / 2, y = -h / 2;
+  s.moveTo(x + r, y);
+  s.lineTo(x + w - r, y);
+  s.quadraticCurveTo(x + w, y, x + w, y + r);
+  s.lineTo(x + w, y + h - r);
+  s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  s.lineTo(x + r, y + h);
+  s.quadraticCurveTo(x, y + h, x, y + h - r);
+  s.lineTo(x, y + r);
+  s.quadraticCurveTo(x, y, x + r, y);
+  return s;
+}
+
+const tileGeo = new THREE.ExtrudeGeometry(roundedRect(1.28, 1.28, 0.26), {
+  depth: 0.16, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.04,
+  bevelSegments: 3, curveSegments: 8,
+});
+tileGeo.rotateX(-Math.PI / 2);
+
+const tiles = [];
+for (let i = 0; i < 9; i++) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x121a33, roughness: 0.32, metalness: 0.75, emissive: 0x000000,
+  });
+  const tile = new THREE.Mesh(tileGeo, mat);
+  tile.position.set(cellX(i), -0.08, cellZ(i));
+  tile.userData = { index: i, baseY: -0.08, hover: 0, winPulse: false };
+  scene.add(tile);
+  tiles.push(tile);
+  // staggered intro
+  tile.scale.setScalar(0.001);
+  const tile0 = tile;
+  tween(0.6, e => tile0.scale.setScalar(Math.max(0.001, e)), { delay: 0.05 + i * 0.05 });
+}
+
+// ---------- marks ----------
+const matX = new THREE.MeshStandardMaterial({ color: X_COLOR, emissive: X_COLOR, emissiveIntensity: 0.85, roughness: 0.3, metalness: 0.65 });
+const matO = new THREE.MeshStandardMaterial({ color: O_COLOR, emissive: O_COLOR, emissiveIntensity: 0.8, roughness: 0.25, metalness: 0.7 });
+const barGeo = new THREE.CylinderGeometry(0.062, 0.062, 1.0, 14);
+const capGeo = new THREE.SphereGeometry(0.062, 14, 14);
+const torusGeo = new THREE.TorusGeometry(0.42, 0.095, 18, 60);
+const marks = new Array(9).fill(null);
+
+function addMark(i, p, animate = true) {
+  const g = new THREE.Group();
+  const mat = p === 'X' ? matX : matO;
+  if (p === 'X') {
+    for (const rz of [Math.PI / 4, Math.PI / 4 + Math.PI / 2]) {
+      const holder = new THREE.Group();
+      const bar = new THREE.Mesh(barGeo, mat);
+      bar.rotation.z = Math.PI / 2;
+      holder.add(bar);
+      for (const s of [-1, 1]) {
+        const cap = new THREE.Mesh(capGeo, mat);
+        cap.position.x = s * 0.5;
+        holder.add(cap);
+      }
+      holder.rotation.y = rz;
+      g.add(holder);
+    }
+  } else {
+    const tor = new THREE.Mesh(torusGeo, mat);
+    tor.rotation.x = Math.PI / 2;
+    g.add(tor);
+  }
+  g.position.set(cellX(i), 0.5, cellZ(i));
+  if (animate) {
+    g.userData.settled = false;
+    g.scale.setScalar(0.001);
+    g.position.y = 1.15;
+    g.rotation.y = 0.9;
+    tween(0.5, (e, k) => {
+      g.scale.setScalar(Math.max(0.001, e));
+      g.position.y = 1.15 - e * 0.65;
+      g.rotation.y = 0.9 * (1 - e);
+      if (k >= 1) g.userData.settled = true;
+    });
+  } else {
+    g.userData.settled = true;
+    g.scale.setScalar(1);
+    g.position.y = 0.5;
+  }
+  scene.add(g);
+  marks[i] = g;
+}
+
+// ---------- win beam ----------
+let beam = null;
+function spawnBeam(line) {
+  const a = new THREE.Vector3(cellX(line[0]), 0.5, cellZ(line[0]));
+  const b = new THREE.Vector3(cellX(line[2]), 0.5, cellZ(line[2]));
+  const dir = new THREE.Vector3().subVectors(b, a);
+  const len = dir.length();
+  const geo = new THREE.CylinderGeometry(0.05, 0.05, 1, 12);
+  const mat = new THREE.MeshStandardMaterial({
+    color: GOLD, emissive: GOLD, emissiveIntensity: 1.8, roughness: 0.3, metalness: 0.4,
+  });
+  beam = new THREE.Mesh(geo, mat);
+  beam.position.copy(a).lerp(b, 0.5);
+  beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+  beam.scale.y = 0.001;
+  scene.add(beam);
+  tween(0.55, e => { beam.scale.y = Math.max(0.001, len * e); }, { ease: easeOutCubic, delay: 0.15 });
+  line.forEach(idx => { tiles[idx].userData.winPulse = true; });
+  const mid = new THREE.Vector3().copy(a).lerp(b, 0.5);
+  spawnSparks(mid.x, mid.z, GOLD);
+}
+
+// ---------- sound ----------
+let actx = null, muted = false;
+function ensureAudio() {
+  if (!actx) {
+    try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
+  }
+}
+function blip(freq, dur = 0.14, type = 'sine', vol = 0.06, delay = 0) {
+  if (muted || !actx) return;
+  const t = actx.currentTime + delay;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type;
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(actx.destination);
+  o.start(t);
+  o.stop(t + dur);
+}
+function winChord() {
+  [523.25, 659.25, 783.99].forEach((f, i) => blip(f, 0.35, 'sine', 0.07, i * 0.12));
+}
+
+// ---------- game flow ----------
+function place(i) {
+  board[i] = turn;
+  addMark(i, turn);
+  blip(turn === 'X' ? 196 : 294, 0.14, turn === 'X' ? 'triangle' : 'sine');
+  const w = winnerOf(board);
+  if (w) endGame(w);
+  else {
+    turn = turn === 'X' ? 'O' : 'X';
+    updateTurn();
+    if (mode === 'ai' && turn === 'O') setTimeout(aiMove, 520);
+  }
+}
+
+function endGame(w) {
+  phase = 'over';
+  winner = w;
+  const line = w === 'D' ? null : LINES.find(([a, b, c]) => board[a] && board[a] === board[b] && board[a] === board[c]);
+  if (line) spawnBeam(line);
+  if (w === 'D') { scores.D++; blip(330, 0.2, 'sine', 0.05); blip(330, 0.2, 'sine', 0.05, 0.18); }
+  else { scores[w]++; winChord(); }
+  saveScores();
+  updateScores();
+  updateTurn();
+  setTimeout(() => { if (phase === 'over') showOverlay(w); }, 800);
+}
+
+function showOverlay(w) {
+  const verdict = $('#verdict');
+  verdict.textContent = w === 'D' ? 'DRAW' : w + ' WINS';
+  verdict.style.color = w === 'D' ? 'var(--gold)' : w === 'X' ? 'var(--x)' : 'var(--o)';
+  overlay.hidden = false;
+  requestAnimationFrame(() => overlay.classList.add('show'));
+}
+
+function hideOverlay() {
+  overlay.classList.remove('show');
+  setTimeout(() => { overlay.hidden = true; }, 300);
+}
+
+function resetBoard() {
+  for (let i = 0; i < 9; i++) {
+    if (marks[i]) { scene.remove(marks[i]); marks[i] = null; }
+    board[i] = null;
+    tiles[i].userData.winPulse = false;
+  }
+  if (beam) {
+    scene.remove(beam);
+    beam.geometry.dispose();
+    beam.material.dispose();
+    beam = null;
+  }
+  turn = 'X';
+  phase = 'playing';
+  winner = null;
+  hideOverlay();
+  updateTurn();
+}
+
+// ---------- pointer / orbit ----------
+const raycaster = new THREE.Raycaster();
+let hovered = -1;
+let dragging = false, moved = 0, lastX = 0, lastY = 0;
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+function toNdc(x, y) {
+  const r = canvas.getBoundingClientRect();
+  return new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+}
+
+function updateHover(x, y) {
+  if (phase !== 'playing' || (mode === 'ai' && turn === 'O')) { hovered = -1; return; }
+  raycaster.setFromCamera(toNdc(x, y), camera);
+  const hit = raycaster.intersectObjects(tiles, false)[0];
+  hovered = hit && !board[hit.object.userData.index] ? hit.object.userData.index : -1;
+}
+
+canvas.addEventListener('pointerdown', e => {
+  ensureAudio();
+  lastInteract = performance.now();
+  dragging = true;
+  moved = 0;
+  lastX = e.clientX;
+  lastY = e.clientY;
+  try { canvas.setPointerCapture(e.pointerId); } catch {}
+});
+
+window.addEventListener('pointermove', e => {
+  if (dragging) {
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    moved += Math.abs(dx) + Math.abs(dy);
+    thetaT -= dx * 0.005;
+    phiT = clamp(phiT - dy * 0.004, 0.35, 1.32);
+    lastX = e.clientX;
+    lastY = e.clientY;
+    lastInteract = performance.now();
+  } else if (e.target === canvas) {
+    updateHover(e.clientX, e.clientY);
+    lastInteract = performance.now();
+  }
+});
+
+window.addEventListener('pointerup', e => {
+  if (!dragging) return;
+  dragging = false;
+  if (moved < 7) tryPlace(e.clientX, e.clientY);
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  radiusT = clamp(radiusT + e.deltaY * 0.011, 5.4, 13.5);
+  lastInteract = performance.now();
+}, { passive: false });
+
+function tryPlace(x, y) {
+  if (phase !== 'playing') return;
+  if (mode === 'ai' && turn === 'O') return;
+  updateHover(x, y);
+  if (hovered >= 0 && !board[hovered]) place(hovered);
+}
+
+// ---------- HUD wiring ----------
+function updateTurn() {
+  const dot = $('#turnDot');
+  dot.className = 'dot ' + (turn === 'X' ? 'x' : 'o');
+  const textEl = $('#turnText');
+  let text;
+  if (phase === 'over') text = winner === 'D' ? 'round over · draw' : 'round over · ' + winner + ' wins';
+  else if (mode === 'ai') text = turn === 'X' ? 'X to move · you' : 'O to move · minimax';
+  else text = turn + ' to move';
+  textEl.textContent = text;
+  textEl.classList.toggle('thinking', mode === 'ai' && phase === 'playing' && turn === 'O');
+}
+
+function updateScores() {
+  $('#scoreX').textContent = scores.X;
+  $('#scoreD').textContent = scores.D;
+  $('#scoreO').textContent = scores.O;
+}
+
+function updateHint() {
+  $('#hintText').textContent = mode === 'ai'
+    ? 'you play X · minimax plays O · drag to orbit, scroll to zoom, click a tile'
+    : 'two players on one screen · drag to orbit, scroll to zoom, click a tile';
+}
+
+function updateModeUI() {
+  $('#modeAi').classList.toggle('active', mode === 'ai');
+  $('#mode2p').classList.toggle('active', mode === '2p');
+}
+
+$('#modeAi').addEventListener('click', () => {
+  if (mode === 'ai') return;
+  mode = 'ai';
+  updateModeUI();
+  updateHint();
+  resetBoard();
+});
+$('#mode2p').addEventListener('click', () => {
+  if (mode === '2p') return;
+  mode = '2p';
+  updateModeUI();
+  updateHint();
+  resetBoard();
+});
+$('#muteBtn').addEventListener('click', () => {
+  muted = !muted;
+  $('#muteBtn').textContent = muted ? 'sound off' : 'sound on';
+  if (!muted) { ensureAudio(); blip(440, 0.1, 'sine', 0.04); }
+});
+
+// ---------- about drawer ----------
+const aboutPanel = $('#aboutPanel');
+const aboutScrim = $('#aboutScrim');
+
+function openAbout() {
+  aboutPanel.hidden = false;
+  aboutScrim.hidden = false;
+  requestAnimationFrame(() => {
+    aboutPanel.classList.add('open');
+    aboutScrim.classList.add('show');
+  });
+  ensureAudio();
+  blip(523.25, 0.12, 'sine', 0.04);
+}
+function closeAbout() {
+  aboutPanel.classList.remove('open');
+  aboutScrim.classList.remove('show');
+  setTimeout(() => { aboutPanel.hidden = true; aboutScrim.hidden = true; }, 380);
+}
+$('#aboutBtn').addEventListener('click', openAbout);
+$('#aboutClose').addEventListener('click', closeAbout);
+aboutScrim.addEventListener('click', closeAbout);
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !aboutPanel.hidden) closeAbout();
+});
+$('#resetScores').addEventListener('click', () => {
+  scores = { X: 0, O: 0, D: 0 };
+  saveScores();
+  updateScores();
+});
+$('#againBtn').addEventListener('click', resetBoard);
+
+// ---------- scores persistence ----------
+function saveScores() {
+  try { localStorage.setItem('tictac-orbit-scores', JSON.stringify(scores)); } catch {}
+}
+function loadScores() {
+  try {
+    const s = JSON.parse(localStorage.getItem('tictac-orbit-scores'));
+    if (s && typeof s.X === 'number') scores = s;
+  } catch {}
+}
+loadScores();
+updateScores();
+updateTurn();
+updateHint();
+updateModeUI();
+
+// ---------- hot reload state (viewer) ----------
+function snapState() {
+  return { scores: { ...scores }, board: board.slice(), turn, phase, winner, mode };
+}
+function restore(s) {
+  if (!s || !Array.isArray(s.board)) return;
+  if (s.scores && typeof s.scores.X === 'number') scores = { ...s.scores };
+  mode = s.mode === '2p' ? '2p' : 'ai';
+  updateScores();
+  updateModeUI();
+  updateHint();
+  for (let i = 0; i < 9; i++) {
+    if (s.board[i]) {
+      board[i] = s.board[i];
+      addMark(i, s.board[i], false);
+    }
+  }
+  turn = s.turn === 'O' ? 'O' : 'X';
+  winner = s.winner || winnerOf(board);
+  phase = s.phase === 'over' ? 'over' : 'playing';
+  if (phase === 'over') {
+    const line = winner === 'D'
+      ? null
+      : LINES.find(([a, b, c]) => board[a] && board[a] === board[b] && board[a] === board[c]);
+    if (line) spawnBeam(line);
+    showOverlay(winner);
+  }
+  updateTurn();
+}
+try {
+  if (window.claude && window.claude.hot) {
+    if (window.claude.hot.snapshot) window.claude.hot.snapshot(snapState);
+    if (window.claude.hot.ready) window.claude.hot.ready(restore);
+    else if (window.claude.hot.data) restore(window.claude.hot.data);
+  }
+} catch {}
+
+// ---------- render loop ----------
+const clock = new THREE.Clock();
+function frame() {
+  requestAnimationFrame(frame);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  stepTweens(dt);
+
+  // damped camera
+  const lerpK = Math.min(1, dt * 7);
+  theta += (thetaT - theta) * lerpK;
+  phi += (phiT - phi) * lerpK;
+  radius += (radiusT - radius) * lerpK;
+  if (!REDUCED && performance.now() - lastInteract > 5000) thetaT += dt * 0.05;
+
+  if (!REDUCED) stars.rotation.y += dt * 0.006;
+  if (!REDUCED) dust.rotation.y -= dt * 0.008;
+
+  const now = performance.now() / 1000;
+  for (let i = 0; i < 9; i++) {
+    const g = marks[i];
+    if (g && g.userData.settled) {
+      g.position.y = 0.5 + Math.sin(now * 1.3 + i * 0.7) * 0.035;
+      if (board[i] === 'O') g.rotation.y += dt * 0.5;
+    }
+  }
+
+  for (const tile of tiles) {
+    const ud = tile.userData;
+    if (ud.winPulse) {
+      const p = 0.55 + 0.35 * Math.sin(performance.now() * 0.006);
+      tile.material.emissive.setHex(GOLD);
+      tile.material.emissive.multiplyScalar(p);
+    } else {
+      const target = phase === 'playing' && ud.index === hovered && !board[ud.index] ? 1 : 0;
+      ud.hover += (target - ud.hover) * Math.min(1, dt * 10);
+      tile.position.y = ud.baseY + ud.hover * 0.13;
+      tile.material.emissive.setHex(turn === 'X' ? X_COLOR : O_COLOR);
+      tile.material.emissive.multiplyScalar(ud.hover * 0.3);
+    }
+  }
+
+  if (beam) beam.material.emissiveIntensity = 1.5 + Math.sin(performance.now() * 0.006) * 0.5;
+
+  // spark bursts
+  for (let i = bursts.length - 1; i >= 0; i--) {
+    const b = bursts[i];
+    b.life += dt;
+    const arr = b.pts.geometry.attributes.position.array;
+    for (let j = 0; j < b.vels.length; j++) {
+      const v = b.vels[j];
+      v.y -= dt * 2.2;
+      arr[j * 3] += v.x * dt;
+      arr[j * 3 + 1] += v.y * dt;
+      arr[j * 3 + 2] += v.z * dt;
+    }
+    b.pts.geometry.attributes.position.needsUpdate = true;
+    b.pts.material.opacity = Math.max(0, 1 - b.life / 1.5);
+    if (b.life >= 1.5) {
+      scene.remove(b.pts);
+      b.pts.geometry.dispose();
+      b.pts.material.dispose();
+      bursts.splice(i, 1);
+    }
+  }
+
+  camera.position.set(
+    Math.sin(phi) * Math.sin(theta) * radius,
+    Math.cos(phi) * radius,
+    Math.sin(phi) * Math.cos(theta) * radius
+  );
+  camera.position.add(TARGET);
+  camera.lookAt(TARGET);
+
+  composer.render();
+}
+frame();
+
+})();
+</script>
+</body>
+</html>
