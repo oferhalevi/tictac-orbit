@@ -2,7 +2,9 @@
 
 A stunningly designed tic-tac-toe game in three.js — a glowing glass board floating in space, with a perfect-play minimax AI, an orbitable camera, synthesized sound, and a gold win beam.
 
-Open `tictac-orbit.html` in any browser. No build step, no server, no dependencies beyond the three.js CDN scripts.
+**Play it now:** https://oferhalevi.github.io/tictac-orbit/
+
+Or open `tictac-orbit.html` in any browser locally. No build step, no server, no dependencies beyond the three.js CDN scripts.
 
 ## Play
 
