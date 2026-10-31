@@ -4,7 +4,7 @@ A stunningly designed tic-tac-toe game in three.js — a glowing glass board flo
 
 **Play it now:** https://oferhalevi.github.io/tictac-orbit/
 
-Or open `tictac-orbit.html` in any browser locally. No build step, no server, no dependencies beyond the three.js CDN scripts.
+Or open `index.html` in any browser locally. No build step, no server, no dependencies beyond the three.js CDN scripts.
 
 ## Play
 
